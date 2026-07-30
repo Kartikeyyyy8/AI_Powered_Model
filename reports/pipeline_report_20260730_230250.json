@@ -1,0 +1,476 @@
+{
+  "timestamp": "2026-07-30T23:02:51.905746",
+  "pipeline_execution_summary": {
+    "total_stages": 7,
+    "total_time_sec": 5.168,
+    "status": "completed",
+    "started": "2026-07-30T23:02:45.142163",
+    "ended": "2026-07-30T23:02:50.315009",
+    "stages": {
+      "load": {
+        "status": "success",
+        "elapsed_sec": 0.162,
+        "error": null
+      },
+      "cleaning": {
+        "status": "success",
+        "elapsed_sec": 0.322,
+        "error": null
+      },
+      "validation": {
+        "status": "success",
+        "elapsed_sec": 0.393,
+        "error": null
+      },
+      "business_rules": {
+        "status": "success",
+        "elapsed_sec": 0.071,
+        "error": null
+      },
+      "statistics": {
+        "status": "success",
+        "elapsed_sec": 0.186,
+        "error": null
+      },
+      "anomaly_detection": {
+        "status": "success",
+        "elapsed_sec": 3.875,
+        "error": null
+      },
+      "scoring": {
+        "status": "success",
+        "elapsed_sec": 0.159,
+        "error": null
+      }
+    }
+  },
+  "validation_summary": {
+    "total_checks": 6,
+    "passed_checks": 3,
+    "failed_checks": 3,
+    "pass_rate": 50.0,
+    "total_violations": 9,
+    "high_severity": 3,
+    "medium_severity": 5,
+    "low_severity": 1
+  },
+  "validation_violations": [
+    {
+      "rule": "Missing values in 'Transaction_ID'",
+      "column": "Transaction_ID",
+      "count": 5018,
+      "percentage": 5.02,
+      "severity": "High",
+      "sample_indices": [
+        6,
+        90,
+        105,
+        124,
+        140,
+        146,
+        148,
+        195,
+        201,
+        213
+      ]
+    },
+    {
+      "rule": "Missing values in 'Transaction_Date'",
+      "column": "Transaction_Date",
+      "count": 68261,
+      "percentage": 68.26,
+      "severity": "Medium",
+      "sample_indices": [
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        14,
+        15
+      ]
+    },
+    {
+      "rule": "Missing values in 'Customer_ID'",
+      "column": "Customer_ID",
+      "count": 4878,
+      "percentage": 4.88,
+      "severity": "High",
+      "sample_indices": [
+        31,
+        49,
+        59,
+        81,
+        119,
+        146,
+        189,
+        207,
+        210,
+        215
+      ]
+    },
+    {
+      "rule": "Missing values in 'Quantity'",
+      "column": "Quantity",
+      "count": 5019,
+      "percentage": 5.02,
+      "severity": "Medium",
+      "sample_indices": [
+        18,
+        46,
+        62,
+        75,
+        86,
+        89,
+        114,
+        144,
+        145,
+        151
+      ]
+    },
+    {
+      "rule": "Missing values in 'Price'",
+      "column": "Price",
+      "count": 33497,
+      "percentage": 33.5,
+      "severity": "Medium",
+      "sample_indices": [
+        5,
+        6,
+        11,
+        12,
+        15,
+        18,
+        19,
+        21,
+        23,
+        25
+      ]
+    },
+    {
+      "rule": "Missing values in 'Transaction_Status'",
+      "column": "Transaction_Status",
+      "count": 16679,
+      "percentage": 16.68,
+      "severity": "Medium",
+      "sample_indices": [
+        0,
+        7,
+        8,
+        19,
+        23,
+        24,
+        50,
+        56,
+        58,
+        70
+      ]
+    },
+    {
+      "rule": "Fully duplicate rows",
+      "column": "All Columns",
+      "count": 995,
+      "percentage": 1.0,
+      "severity": "High",
+      "sample_indices": [
+        3544,
+        4816,
+        5455,
+        5938,
+        8125,
+        9111,
+        9123,
+        9232,
+        9994,
+        10856
+      ]
+    },
+    {
+      "rule": "Unrecognised Transaction_Status values",
+      "column": "Transaction_Status",
+      "count": 16717,
+      "percentage": 16.72,
+      "severity": "Medium",
+      "sample_indices": [
+        10,
+        17,
+        22,
+        25,
+        26,
+        27,
+        33,
+        59,
+        63,
+        68
+      ],
+      "example_values": {
+        "Complete": 16717
+      }
+    },
+    {
+      "rule": "'Transaction_ID' values not matching pattern '^TXN\\d+$'",
+      "column": "Transaction_ID",
+      "count": 94982,
+      "percentage": 94.98,
+      "severity": "Low",
+      "sample_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10
+      ],
+      "example_values": {
+        "T22566": 3,
+        "T1258": 3,
+        "T1685": 3,
+        "T57553": 3,
+        "T7466": 3
+      }
+    }
+  ],
+  "business_rules_summary": {
+    "total_violation_types": 6,
+    "total_affected_records": 85298,
+    "rules_quality_score": 14.7,
+    "violations": [
+      {
+        "rule": "Missing required field 'Transaction_ID'",
+        "column": "Transaction_ID",
+        "count": 5018,
+        "percentage": 5.02,
+        "severity": "High",
+        "sample_indices": [
+          6,
+          90,
+          105,
+          124,
+          140,
+          146,
+          148,
+          195,
+          201,
+          213
+        ]
+      },
+      {
+        "rule": "Missing required field 'Customer_ID'",
+        "column": "Customer_ID",
+        "count": 4878,
+        "percentage": 4.88,
+        "severity": "High",
+        "sample_indices": [
+          31,
+          49,
+          59,
+          81,
+          119,
+          146,
+          189,
+          207,
+          210,
+          215
+        ]
+      },
+      {
+        "rule": "Negative values in 'Quantity'",
+        "column": "Quantity",
+        "count": 31619,
+        "percentage": 31.62,
+        "severity": "High",
+        "sample_indices": [
+          0,
+          2,
+          3,
+          4,
+          9,
+          14,
+          15,
+          19,
+          26,
+          28
+        ]
+      },
+      {
+        "rule": "Negative values in 'Price'",
+        "column": "Price",
+        "count": 33195,
+        "percentage": 33.2,
+        "severity": "High",
+        "sample_indices": [
+          1,
+          4,
+          7,
+          10,
+          16,
+          17,
+          20,
+          22,
+          28,
+          33
+        ]
+      },
+      {
+        "rule": "Duplicate 'Transaction_ID' values",
+        "column": "Transaction_ID",
+        "count": 1870,
+        "percentage": 1.87,
+        "severity": "High",
+        "sample_indices": [
+          26,
+          141,
+          161,
+          323,
+          359,
+          579,
+          646,
+          656,
+          676,
+          997
+        ]
+      },
+      {
+        "rule": "Unrecognised values in 'Product_Name'",
+        "column": "Product_Name",
+        "count": 8718,
+        "percentage": 8.72,
+        "severity": "Low",
+        "sample_indices": [
+          1,
+          3,
+          17,
+          25,
+          27,
+          43,
+          50,
+          62,
+          64,
+          72
+        ],
+        "unknown_values": {
+          "Lapt": 370,
+          "Table": 352,
+          "La": 347,
+          "Tabl": 346,
+          "Lapto": 344,
+          "Ta": 344,
+          "T": 335,
+          "Lap": 334,
+          "Tab": 330,
+          "L": 321
+        }
+      }
+    ]
+  },
+  "anomaly_summary": {
+    "features_used": [
+      "Transaction_ID",
+      "Customer_ID",
+      "Quantity",
+      "Price"
+    ],
+    "total_rows_analysed": 100000,
+    "contamination_rate": 0.05,
+    "isolation_forest_anomalies": 4999,
+    "isolation_forest_pct": 5.0,
+    "lof_anomalies": 5000,
+    "lof_pct": 5.0,
+    "consensus_anomalies": 210,
+    "consensus_pct": 0.21
+  },
+  "quality_scores": {
+    "dataset": {
+      "dataset_score": 67.38,
+      "completeness_score": 83.33,
+      "uniqueness_score": 99.0,
+      "validity_score": 14.49,
+      "rules_quality_score": 14.7,
+      "anomaly_penalty": 0.21,
+      "total_rows": 100000,
+      "total_columns": 8
+    },
+    "columns": {
+      "Transaction_ID": 94.98,
+      "Transaction_Date": 31.74,
+      "Customer_ID": 95.12,
+      "Product_Name": 100.0,
+      "Quantity": 94.98,
+      "Price": 66.5,
+      "Payment_Method": 100.0,
+      "Transaction_Status": 83.32
+    },
+    "record_score_stats": {
+      "mean": 83.33,
+      "median": 87.5,
+      "min": 25.0,
+      "max": 100.0,
+      "pct_below_50": 0.03
+    }
+  },
+  "statistics": {
+    "descriptive_stats": {
+      "Quantity": {
+        "mean": 183.8839,
+        "median": 6.0,
+        "std": 299.2924,
+        "min": -10.0,
+        "max": 1000.0,
+        "skewness": 1.3717,
+        "kurtosis": 0.4179,
+        "non_null_count": 94981
+      },
+      "Price": {
+        "mean": 0.6672,
+        "median": 51.6085,
+        "std": 592.5187,
+        "min": -999.9689,
+        "max": 999.9877,
+        "skewness": -0.0045,
+        "kurtosis": -1.2902,
+        "non_null_count": 66503
+      }
+    },
+    "missing_summary": {
+      "Transaction_ID": {
+        "null_count": 5018,
+        "null_percentage": 5.02
+      },
+      "Transaction_Date": {
+        "null_count": 68261,
+        "null_percentage": 68.26
+      },
+      "Customer_ID": {
+        "null_count": 4878,
+        "null_percentage": 4.88
+      },
+      "Product_Name": {
+        "null_count": 0,
+        "null_percentage": 0.0
+      },
+      "Quantity": {
+        "null_count": 5019,
+        "null_percentage": 5.02
+      },
+      "Price": {
+        "null_count": 33497,
+        "null_percentage": 33.5
+      },
+      "Payment_Method": {
+        "null_count": 0,
+        "null_percentage": 0.0
+      },
+      "Transaction_Status": {
+        "null_count": 16679,
+        "null_percentage": 16.68
+      }
+    }
+  }
+}
