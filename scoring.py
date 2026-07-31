@@ -110,9 +110,9 @@ def compute_dataset_scores(
     # Business-rule quality score (from rules.py helper)
     # ------------------------------------------------------------------
     # Import here to avoid circular import at module level; rules.py imports config only.
-    from rules import compute_rules_quality_score  # type: ignore
+    from rules import compute_rules_quality_score, get_unique_violation_indices  # type: ignore
 
-    rules_quality_score = compute_rules_quality_score(violations or [], total_rows)
+    rules_quality_score = compute_rules_quality_score(violations or [], total_rows, df=df)
 
     # ------------------------------------------------------------------
     # Anomaly penalty — percentage of rows flagged by consensus model
@@ -124,17 +124,19 @@ def compute_dataset_scores(
         )
 
     # ------------------------------------------------------------------
-    # Validity — based on actual violated / anomalous records
+    # Validity — % of rows with NO rule violation AND NOT a consensus anomaly.
+    # Uses the unique-row union (get_unique_violation_indices), not a sum of
+    # per-rule counts — a row failing multiple rules used to get counted
+    # once per rule it failed, which could overstate how many rows are
+    # actually affected and understate the true validity score.
     # ------------------------------------------------------------------
-    # We use violation counts (conservative estimate: may double-count records
-    # that violate multiple rules, so validity is a lower bound).
-    total_issues = sum(v.get("count", 0) for v in (violations or []))
+    unique_violated_rows = set(get_unique_violation_indices(df))
     if anomaly_result and isinstance(anomaly_result, dict):
-        total_issues += anomaly_result.get("consensus_anomalies", 0)
+        unique_violated_rows |= set(anomaly_result.get("consensus_indices", []))
 
     if violations or anomaly_result:
         validity = max(
-            0.0, float((1.0 - min(total_issues, total_rows) / total_rows) * 100)
+            0.0, float((1.0 - len(unique_violated_rows) / total_rows) * 100)
         )
         overall = completeness * 0.40 + uniqueness * 0.30 + validity * 0.30
     else:

@@ -48,17 +48,27 @@ logger = logging.getLogger("ml_engine.anomaly")
 # ---------------------------------------------------------------------------
 
 
-def _prepare_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+def _prepare_feature_matrix(df: pd.DataFrame, feature_cols: List[str] = None) -> Tuple[np.ndarray, List[str]]:
     """
     Extract, impute (median), and scale numeric features for anomaly detection.
-
-    Also attempts to coerce object columns that are mostly numeric
-    (e.g. Price stored as ``"$99.99"`` before cleaning) into float.
 
     Parameters
     ----------
     df : pd.DataFrame
         Cleaned dataframe (Price should already be numeric after cleaning).
+    feature_cols : list[str] | None
+        Explicit list of columns to use as features. Defaults to
+        ``["Quantity", "Price"]`` — the only columns that represent
+        genuine behavioral measurements in this dataset.
+
+        IMPORTANT: this used to auto-detect "numeric-looking" object
+        columns by stripping non-digit characters, which silently pulled
+        in Transaction_ID and Customer_ID (e.g. "T0001" -> "0001" -> 1,
+        "C2205" -> "2205" -> 2205) as anomaly-detection features. An ID's
+        numeric suffix carries no behavioral signal — it's an arbitrary
+        assigned label — so including it made roughly half of the feature
+        space meaningless. Always pass an explicit whitelist; don't
+        auto-detect numeric-looking columns for this purpose.
 
     Returns
     -------
@@ -70,37 +80,26 @@ def _prepare_feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
     ValueError
         If no usable numeric columns exist after imputation.
     """
-    df_proc = df.copy()
+    if feature_cols is None:
+        feature_cols = ["Quantity", "Price"]
 
-    # Attempt to recover object columns that look numeric
-    for col in df_proc.select_dtypes(include=["object"]).columns:
-        parsed = pd.to_numeric(
-            df_proc[col].astype(str).str.replace(r"[^\d.\-]", "", regex=True),
-            errors="coerce",
-        )
-        # Only convert if > 30% of values are parseable
-        if parsed.notna().sum() > 0.3 * len(df_proc):
-            df_proc[col] = parsed
+    available = [c for c in feature_cols if c in df.columns]
+    if not available:
+        raise ValueError(f"None of the requested feature columns {feature_cols} are present in the DataFrame.")
 
-    num_cols = df_proc.select_dtypes(include=[np.number]).columns.tolist()
-    if not num_cols:
-        raise ValueError("No numeric columns found in DataFrame.")
-
-    X = df_proc[num_cols].copy()
-
-    # Median imputation — CoW-safe assignment
+    X = df[available].copy()
     for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors="coerce")
         if X[col].isna().any():
             X[col] = X[col].fillna(X[col].median())
 
-    # Drop any column that is still entirely NaN
     X = X.dropna(axis=1)
     if X.empty:
-        raise ValueError("All numeric columns are empty after imputation.")
+        raise ValueError("All requested feature columns are empty after imputation.")
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    logger.info("Feature matrix prepared: %d rows × %d features.", *X_scaled.shape)
+    logger.info("Feature matrix prepared: %d rows × %d features (%s).", *X_scaled.shape, list(X.columns))
     return X_scaled, X.columns.tolist()
 
 
@@ -181,6 +180,7 @@ def run_ml_anomalies(
     df: pd.DataFrame,
     contamination: float = ANOMALY_CONTAMINATION,
     random_state: int = ANOMALY_RANDOM_STATE,
+    feature_cols: List[str] = None,
 ) -> Dict[str, Any]:
     """
     Run both ML anomaly detection models and return a structured summary.
@@ -196,6 +196,10 @@ def run_ml_anomalies(
         Expected proportion of anomalies. Default: 0.05.
     random_state : int
         Seed for Isolation Forest reproducibility. Default: 42.
+    feature_cols : list[str] | None
+        Explicit feature columns to use. Defaults to ``["Quantity", "Price"]``
+        — see ``_prepare_feature_matrix`` for why this must be explicit
+        rather than auto-detected.
 
     Returns
     -------
@@ -227,7 +231,7 @@ def run_ml_anomalies(
         }
 
     try:
-        X_scaled, feature_cols = _prepare_feature_matrix(df)
+        X_scaled, feature_cols_used = _prepare_feature_matrix(df, feature_cols=feature_cols)
     except ValueError as exc:
         logger.error("Feature preparation failed: %s", exc)
         return {
@@ -263,7 +267,7 @@ def run_ml_anomalies(
         anomaly_records.append(row_dict)
 
     return {
-        "features_used": feature_cols,
+        "features_used": feature_cols_used,
         "total_rows_analysed": n_rows,
         "contamination_rate": contamination,
         "isolation_forest_anomalies": int(iso_mask.sum()),

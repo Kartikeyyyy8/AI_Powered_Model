@@ -78,6 +78,14 @@ def clean_dates(df: pd.DataFrame, date_col: str = "Transaction_Date") -> pd.Data
     """
     Parse the date column to datetime, coercing unparseable values to NaT.
 
+    Uses ``dayfirst=True``: this dataset mixes two date formats in the same
+    column — ``YYYY-MM-DD`` (where the genuinely-corrupted rows live, e.g.
+    ``"2025-02-30"``) and ``DD-MM-YYYY`` (valid real dates, e.g.
+    ``"07-08-2023"``). Without ``dayfirst=True``, pandas' default parsing
+    wrongly rejects ~19,000 additional valid ``DD-MM-YYYY`` dates as
+    unparseable on top of the ones that are genuinely calendar-invalid,
+    inflating the invalid/missing count by more than 25%.
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -95,7 +103,7 @@ def clean_dates(df: pd.DataFrame, date_col: str = "Transaction_Date") -> pd.Data
         return df
 
     original_nulls = df[date_col].isna().sum()
-    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
     new_nulls = df[date_col].isna().sum() - original_nulls
 
     if new_nulls > 0:

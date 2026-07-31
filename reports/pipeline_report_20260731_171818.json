@@ -1,45 +1,45 @@
 {
-  "timestamp": "2026-07-30T23:02:51.905746",
+  "timestamp": "2026-07-31T17:18:19.852885",
   "pipeline_execution_summary": {
     "total_stages": 7,
-    "total_time_sec": 5.168,
+    "total_time_sec": 4.403,
     "status": "completed",
-    "started": "2026-07-30T23:02:45.142163",
-    "ended": "2026-07-30T23:02:50.315009",
+    "started": "2026-07-31T17:18:13.774716",
+    "ended": "2026-07-31T17:18:18.192764",
     "stages": {
       "load": {
         "status": "success",
-        "elapsed_sec": 0.162,
+        "elapsed_sec": 0.134,
         "error": null
       },
       "cleaning": {
         "status": "success",
-        "elapsed_sec": 0.322,
+        "elapsed_sec": 0.24,
         "error": null
       },
       "validation": {
         "status": "success",
-        "elapsed_sec": 0.393,
+        "elapsed_sec": 0.305,
         "error": null
       },
       "business_rules": {
         "status": "success",
-        "elapsed_sec": 0.071,
+        "elapsed_sec": 0.065,
         "error": null
       },
       "statistics": {
         "status": "success",
-        "elapsed_sec": 0.186,
+        "elapsed_sec": 0.159,
         "error": null
       },
       "anomaly_detection": {
         "status": "success",
-        "elapsed_sec": 3.875,
+        "elapsed_sec": 3.172,
         "error": null
       },
       "scoring": {
         "status": "success",
-        "elapsed_sec": 0.159,
+        "elapsed_sec": 0.328,
         "error": null
       }
     }
@@ -51,8 +51,8 @@
     "pass_rate": 50.0,
     "total_violations": 9,
     "high_severity": 3,
-    "medium_severity": 5,
-    "low_severity": 1
+    "medium_severity": 6,
+    "low_severity": 0
   },
   "validation_violations": [
     {
@@ -77,20 +77,20 @@
     {
       "rule": "Missing values in 'Transaction_Date'",
       "column": "Transaction_Date",
-      "count": 68261,
-      "percentage": 68.26,
+      "count": 55567,
+      "percentage": 55.57,
       "severity": "Medium",
       "sample_indices": [
         2,
+        3,
         4,
+        5,
         6,
-        7,
         8,
         9,
-        10,
-        11,
-        14,
-        15
+        12,
+        13,
+        14
       ]
     },
     {
@@ -172,8 +172,8 @@
     {
       "rule": "Fully duplicate rows",
       "column": "All Columns",
-      "count": 995,
-      "percentage": 1.0,
+      "count": 994,
+      "percentage": 0.99,
       "severity": "High",
       "sample_indices": [
         3544,
@@ -186,6 +186,25 @@
         9232,
         9994,
         10856
+      ]
+    },
+    {
+      "rule": "Unparseable dates in 'Transaction_Date'",
+      "column": "Transaction_Date",
+      "count": 50687,
+      "percentage": 50.69,
+      "severity": "Medium",
+      "sample_indices": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        9,
+        12,
+        13,
+        14,
+        15
       ]
     },
     {
@@ -209,38 +228,12 @@
       "example_values": {
         "Complete": 16717
       }
-    },
-    {
-      "rule": "'Transaction_ID' values not matching pattern '^TXN\\d+$'",
-      "column": "Transaction_ID",
-      "count": 94982,
-      "percentage": 94.98,
-      "severity": "Low",
-      "sample_indices": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        7,
-        8,
-        9,
-        10
-      ],
-      "example_values": {
-        "T22566": 3,
-        "T1258": 3,
-        "T1685": 3,
-        "T57553": 3,
-        "T7466": 3
-      }
     }
   ],
   "business_rules_summary": {
     "total_violation_types": 6,
     "total_affected_records": 85298,
-    "rules_quality_score": 14.7,
+    "rules_quality_score": 36.76,
     "violations": [
       {
         "rule": "Missing required field 'Transaction_ID'",
@@ -372,34 +365,32 @@
   },
   "anomaly_summary": {
     "features_used": [
-      "Transaction_ID",
-      "Customer_ID",
       "Quantity",
       "Price"
     ],
     "total_rows_analysed": 100000,
     "contamination_rate": 0.05,
-    "isolation_forest_anomalies": 4999,
+    "isolation_forest_anomalies": 5000,
     "isolation_forest_pct": 5.0,
     "lof_anomalies": 5000,
     "lof_pct": 5.0,
-    "consensus_anomalies": 210,
-    "consensus_pct": 0.21
+    "consensus_anomalies": 289,
+    "consensus_pct": 0.29
   },
   "quality_scores": {
     "dataset": {
-      "dataset_score": 67.38,
-      "completeness_score": 83.33,
-      "uniqueness_score": 99.0,
-      "validity_score": 14.49,
-      "rules_quality_score": 14.7,
-      "anomaly_penalty": 0.21,
+      "dataset_score": 74.66,
+      "completeness_score": 84.92,
+      "uniqueness_score": 99.01,
+      "validity_score": 36.65,
+      "rules_quality_score": 36.76,
+      "anomaly_penalty": 0.29,
       "total_rows": 100000,
       "total_columns": 8
     },
     "columns": {
       "Transaction_ID": 94.98,
-      "Transaction_Date": 31.74,
+      "Transaction_Date": 44.43,
       "Customer_ID": 95.12,
       "Product_Name": 100.0,
       "Quantity": 94.98,
@@ -408,9 +399,9 @@
       "Transaction_Status": 83.32
     },
     "record_score_stats": {
-      "mean": 83.33,
+      "mean": 84.92,
       "median": 87.5,
-      "min": 25.0,
+      "min": 37.5,
       "max": 100.0,
       "pct_below_50": 0.03
     }
@@ -444,8 +435,8 @@
         "null_percentage": 5.02
       },
       "Transaction_Date": {
-        "null_count": 68261,
-        "null_percentage": 68.26
+        "null_count": 55567,
+        "null_percentage": 55.57
       },
       "Customer_ID": {
         "null_count": 4878,

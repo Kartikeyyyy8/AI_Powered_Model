@@ -241,7 +241,7 @@ def validate_dtypes(df: pd.DataFrame) -> Dict[str, Any]:
 
 
 def validate_dates(
-    df: pd.DataFrame, date_col: str = "Transaction_Date"
+    df: pd.DataFrame, date_col: str = "Transaction_Date", raw_df: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """
     Validate that the date column contains parseable, non-future dates.
@@ -249,13 +249,24 @@ def validate_dates(
     Parameters
     ----------
     df : pd.DataFrame
+        The (possibly already-cleaned) dataframe used for the future-date check.
     date_col : str
         Name of the date column. Default: ``"Transaction_Date"``.
+    raw_df : pd.DataFrame | None
+        The RAW, pre-cleaning dataframe. Required to detect invalid dates
+        correctly: if ``df[date_col]`` has already been parsed by
+        ``cleaning.clean_dates()``, invalid dates are already NaT, and
+        comparing ``pd.to_datetime(df[date_col])`` against itself always
+        yields zero — this check would silently never fire. Passing the
+        raw dataframe lets us compare "originally missing" against
+        "unparseable after parsing" and get a real count. If not provided,
+        falls back to checking ``df`` directly (only meaningful if ``df``
+        is itself the raw, unparsed data).
 
     Returns
     -------
     dict
-        ``invalid_dates`` — count of unparseable dates
+        ``invalid_dates`` — count of unparseable (but non-null) dates
         ``future_dates``  — count of dates after today
         ``violations``    — violation dicts with count & percentage
     """
@@ -266,14 +277,17 @@ def validate_dates(
         logger.debug("Column '%s' not found; skipping date validation.", date_col)
         return {"invalid_dates": 0, "future_dates": 0, "violations": violations}
 
-    parsed = pd.to_datetime(df[date_col], errors="coerce")
-    invalid_count = max(0, int(parsed.isna().sum() - df[date_col].isna().sum()))
+    source = raw_df if raw_df is not None else df
+    parsed = pd.to_datetime(source[date_col], errors="coerce", dayfirst=True)
+    invalid_count = max(0, int(parsed.isna().sum() - source[date_col].isna().sum()))
 
     today = pd.Timestamp.now().normalize()
-    future_count = int((parsed > today).sum())
+    # Future-date check uses the already-cleaned column if available (it's the same values, just typed)
+    date_series = df[date_col] if pd.api.types.is_datetime64_any_dtype(df[date_col]) else parsed
+    future_count = int((date_series > today).sum())
 
     if invalid_count > 0:
-        invalid_idx = df.index[parsed.isna() & df[date_col].notna()].tolist()[:10]
+        invalid_idx = source.index[parsed.isna() & source[date_col].notna()].tolist()[:10]
         violations.append(
             _violation(
                 check="date_check",
@@ -286,7 +300,7 @@ def validate_dates(
             )
         )
     if future_count > 0:
-        future_idx = df.index[(parsed > today)].tolist()[:10]
+        future_idx = df.index[(date_series > today)].tolist()[:10]
         violations.append(
             _violation(
                 check="date_check",
@@ -395,7 +409,7 @@ def validate_payment_methods(df: pd.DataFrame) -> Dict[str, Any]:
 def validate_regex_patterns(
     df: pd.DataFrame,
     id_col: str = "Transaction_ID",
-    id_pattern: str = r"^TXN\d+$",
+    id_pattern: str = r"^T\d+$",
 ) -> Dict[str, Any]:
     """
     Check that ID columns match an expected regex pattern.
@@ -406,7 +420,9 @@ def validate_regex_patterns(
     id_col : str
         Column to validate. Default: ``"Transaction_ID"``.
     id_pattern : str
-        Regex pattern that valid IDs must match. Default: ``r"^TXN\\d+$"``.
+        Regex pattern that valid IDs must match. Default: ``r"^T\\d+$"``
+        (this dataset's actual format, e.g. ``"T0001"``, ``"T12488"`` — a
+        single "T" prefix, not "TXN").
 
     Returns
     -------
@@ -463,7 +479,7 @@ def validate_regex_patterns(
 # ---------------------------------------------------------------------------
 
 
-def run_validation(df: pd.DataFrame) -> Dict[str, Any]:
+def run_validation(df: pd.DataFrame, raw_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
     """
     Run all validation checks and return a combined structured result.
 
@@ -480,7 +496,14 @@ def run_validation(df: pd.DataFrame) -> Dict[str, Any]:
     Parameters
     ----------
     df : pd.DataFrame
-        Raw or cleaned dataframe to validate.
+        Cleaned dataframe to validate (used for most checks).
+    raw_df : pd.DataFrame | None
+        The raw, pre-cleaning dataframe. Passed to ``validate_dates`` so it
+        can distinguish genuinely-missing dates from calendar-invalid ones,
+        which is only possible before ``cleaning.clean_dates()`` has already
+        converted invalid dates to NaT. If omitted, the date-invalidity
+        check will not be able to detect anything (see ``validate_dates``
+        docstring) — always pass the raw dataframe when available.
 
     Returns
     -------
@@ -494,7 +517,7 @@ def run_validation(df: pd.DataFrame) -> Dict[str, Any]:
     nulls_result   = validate_nulls_and_duplicates(df)
     schema_result  = validate_schema(df)
     dtypes_result  = validate_dtypes(df)
-    dates_result   = validate_dates(df)
+    dates_result   = validate_dates(df, raw_df=raw_df)
     payment_result = validate_payment_methods(df)
     regex_result   = validate_regex_patterns(df)
 

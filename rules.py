@@ -333,24 +333,75 @@ def check_missing_required_fields(
 # ---------------------------------------------------------------------------
 
 
+def get_unique_violation_indices(df: pd.DataFrame) -> "pd.Index":
+    """
+    Return the union of row indices affected by ANY business rule violation.
+
+    ``compute_rules_quality_score`` and ``scoring.compute_dataset_scores``
+    previously summed per-rule violation counts directly, which
+    double-counts any row that trips more than one rule (e.g. a row with
+    both a negative Price AND a duplicate Transaction_ID gets counted
+    twice). This computes the true unique-row impact instead, so the
+    resulting score reflects "what fraction of rows have at least one
+    problem," not an inflated sum that can overstate how bad the dataset is.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Cleaned dataframe (same one passed to ``run_business_rules``).
+
+    Returns
+    -------
+    pd.Index
+        Index of rows affected by at least one rule violation.
+    """
+    mask = pd.Series(False, index=df.index)
+
+    for col in df.select_dtypes(include=[np.number]).columns:
+        mask |= df[col] < 0
+
+    if "Transaction_Date" in df.columns:
+        parsed = pd.to_datetime(df["Transaction_Date"], errors="coerce", dayfirst=True)
+        today = pd.Timestamp.now().normalize()
+        mask |= parsed > today
+
+    if "Transaction_ID" in df.columns:
+        non_null_mask = df["Transaction_ID"].notna()
+        mask |= non_null_mask & df["Transaction_ID"].duplicated(keep=False)
+
+    if "Product_Name" in df.columns:
+        mask |= ~df["Product_Name"].isin(KNOWN_CATEGORIES) & df["Product_Name"].notna()
+
+    for col in REQUIRED_COLUMNS:
+        if col in df.columns:
+            mask |= df[col].isna()
+
+    return df.index[mask]
+
+
 def compute_rules_quality_score(
-    violations: List[dict], total_rows: int
+    violations: List[dict], total_rows: int, df: Optional[pd.DataFrame] = None
 ) -> float:
     """
     Compute a business-rule quality score (0 – 100).
 
     The score reflects what proportion of records are free from any business
-    rule violation. Uniquely affected rows are counted once even if they
-    appear in multiple violation types.
+    rule violation, counting each affected row once even if it trips
+    multiple rules.
 
     Score = (1 − unique_violated_rows / total_rows) × 100
 
     Parameters
     ----------
     violations : list[dict]
-        Output from :func:`run_business_rules`.
+        Output from :func:`run_business_rules`. Used as a fallback when
+        ``df`` isn't provided (summed counts — may double-count).
     total_rows : int
         Total number of rows in the dataset.
+    df : pd.DataFrame | None
+        The cleaned dataframe. When provided, uses the accurate
+        unique-row count via :func:`get_unique_violation_indices` instead
+        of summing potentially-overlapping violation counts.
 
     Returns
     -------
@@ -362,15 +413,19 @@ def compute_rules_quality_score(
     if not violations:
         return 100.0
 
-    # Count unique violated records using the sample as a proxy.
-    # For large datasets the sample is not exhaustive, so we fall back to
-    # summing violation counts (which may double-count but gives a conservative score).
+    if df is not None:
+        unique_violated = len(get_unique_violation_indices(df))
+        score = max(0.0, float((1.0 - unique_violated / total_rows) * 100))
+        return round(score, 2)
+
+    # Fallback: no dataframe provided, so we can't compute the unique-row
+    # union — sum counts as a conservative (may double-count) estimate.
     total_issues = sum(v.get("count", 0) for v in violations)
     score = max(0.0, float((1.0 - min(total_issues, total_rows) / total_rows) * 100))
     return round(score, 2)
 
 
-def rules_summary(violations: List[dict], total_rows: int) -> Dict[str, Any]:
+def rules_summary(violations: List[dict], total_rows: int, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
     """
     Return a compact summary of all business rule violations.
 
@@ -380,6 +435,9 @@ def rules_summary(violations: List[dict], total_rows: int) -> Dict[str, Any]:
         Output from :func:`run_business_rules`.
     total_rows : int
         Total number of rows in the dataset.
+    df : pd.DataFrame | None
+        Cleaned dataframe, passed through to :func:`compute_rules_quality_score`
+        for accurate (non-double-counted) scoring.
 
     Returns
     -------
@@ -391,7 +449,7 @@ def rules_summary(violations: List[dict], total_rows: int) -> Dict[str, Any]:
         ``violations``            — the original violation list (compact form)
     """
     total_affected = sum(v.get("count", 0) for v in violations)
-    quality_score = compute_rules_quality_score(violations, total_rows)
+    quality_score = compute_rules_quality_score(violations, total_rows, df=df)
 
     severity_counts: Dict[str, int] = {"High": 0, "Medium": 0, "Low": 0}
     for v in violations:

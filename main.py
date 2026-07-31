@@ -187,7 +187,7 @@ def run_pipeline(
     # Stage 3 — Validation
     # ------------------------------------------------------------------
     val_result, elapsed, err = _run_stage(
-        "validation", validation.run_validation, df_clean
+        "validation", validation.run_validation, df_clean, raw_df=df_raw
     )
     val_result = val_result or {}
     result["stages"]["validation"] = {
