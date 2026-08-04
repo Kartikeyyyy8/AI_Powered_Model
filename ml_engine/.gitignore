@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual Environment
+.venv/
+venv/
+
+# Generated Reports
+reports/*.xlsx
+reports/*.json
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
