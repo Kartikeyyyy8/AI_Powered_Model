@@ -6,24 +6,31 @@ import OutlierChart from '../charts/OutlierChart';
 import CategoryChart from '../charts/CategoryChart';
 import DataTable from '../components/DataTable';
 import SeverityBadge from '../components/SeverityBadge';
+import { useDataset } from '../context/DatasetContext';
 import { Award, AlertTriangle, FileSpreadsheet, ShieldAlert } from 'lucide-react';
 
-const sampleRecentRuns = [
-  { id: 'DS-901', name: 'ecommerce_transactions.csv', rows: 10000, score: '94.2%', severity: 'Low', date: '2026-07-29' },
-  { id: 'DS-902', name: 'user_logs_q3.csv', rows: 4500, score: '88.5%', severity: 'Medium', date: '2026-07-28' },
-  { id: 'DS-903', name: 'payments_july.xlsx', rows: 12000, score: '76.0%', severity: 'High', date: '2026-07-27' },
-];
-
 const columns = [
-  { header: 'ID', key: 'id' },
-  { header: 'Dataset Name', key: 'name' },
-  { header: 'Row Count', key: 'rows' },
-  { header: 'Quality Score', key: 'score' },
-  { header: 'Severity', render: (row) => <SeverityBadge severity={row.severity} /> },
-  { header: 'Processed Date', key: 'date' },
+  { header: 'ID', key: '_id' },
+  { header: 'Dataset Name', key: 'originalName' },
+  { header: 'Size (KB)', render: (row) => `${(row.size / 1024).toFixed(1)} KB` },
+  { header: 'Status', render: (row) => <span style={{ textTransform: 'capitalize', color: 'var(--accent-emerald)' }}>{row.status}</span> },
+  { header: 'Uploaded Date', render: (row) => new Date(row.uploadedAt || Date.now()).toLocaleDateString() },
 ];
 
 const Dashboard = () => {
+  const { dashboardStats, datasetsList, activeDataset } = useDataset();
+
+  const stats = dashboardStats || {
+    overallQualityScore: 94.2,
+    totalDatasetsProcessed: datasetsList?.length || 1,
+    totalAnomaliesDetected: 14,
+    criticalAlerts: 2,
+  };
+
+  const runsTable = datasetsList && datasetsList.length > 0 ? datasetsList : [
+    { _id: 'DS-901', originalName: 'ecommerce_transactions.csv', size: 245000, status: 'uploaded', uploadedAt: new Date().toISOString() }
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div>
@@ -31,7 +38,7 @@ const Dashboard = () => {
           Executive System Dashboard
         </h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          Real-time metrics, data quality scoring trends, and statistical anomaly insights.
+          Real-time metrics and quality scoring trends for <strong>{activeDataset?.originalName || 'Active Dataset'}</strong>.
         </p>
       </div>
 
@@ -39,7 +46,7 @@ const Dashboard = () => {
       <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
         <MetricCard
           title="Overall Quality Score"
-          value="94.2 / 100"
+          value={`${stats.overallQualityScore} / 100`}
           subtitle="vs last week"
           trend="up"
           trendValue="+3.2%"
@@ -48,24 +55,24 @@ const Dashboard = () => {
         />
         <MetricCard
           title="Total Datasets Processed"
-          value="128"
-          subtitle="across 4 workspace teams"
+          value={stats.totalDatasetsProcessed || datasetsList.length || 1}
+          subtitle="registered in system"
           icon={FileSpreadsheet}
           color="var(--accent-cyan)"
         />
         <MetricCard
           title="Anomalies Detected"
-          value="342"
-          subtitle="12 critical flagged"
+          value={stats.totalAnomaliesDetected}
+          subtitle="critical flagged"
           trend="down"
           trendValue="-14%"
           icon={AlertTriangle}
           color="var(--accent-amber)"
         />
         <MetricCard
-          title="Critical Business Rule Violations"
-          value="4"
-          subtitle="requires immediate cleanup"
+          title="Critical Rule Violations"
+          value={stats.criticalAlerts}
+          subtitle="requires attention"
           icon={ShieldAlert}
           color="var(--accent-rose)"
         />
@@ -89,9 +96,9 @@ const Dashboard = () => {
       {/* Recent Datasets Table */}
       <div className="glass-card" style={{ padding: '1.5rem' }}>
         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '1rem' }}>
-          Recent Analysis Runs
+          Registered Datasets
         </h3>
-        <DataTable columns={columns} data={sampleRecentRuns} />
+        <DataTable columns={columns} data={runsTable} />
       </div>
     </div>
   );

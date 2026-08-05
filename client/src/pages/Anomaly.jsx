@@ -3,8 +3,9 @@ import ChartCard from '../components/ChartCard';
 import OutlierChart from '../charts/OutlierChart';
 import DataTable from '../components/DataTable';
 import SeverityBadge from '../components/SeverityBadge';
+import { useDataset } from '../context/DatasetContext';
 
-const anomalyRecords = [
+const defaultAnomalyRecords = [
   { row: 142, feature: 'Transaction_Amount', value: '$84,500.00', model: 'Isolation Forest', score: '0.94', severity: 'Critical' },
   { row: 589, feature: 'Order_Frequency', value: '1,200 / hr', model: 'Local Outlier Factor', score: '0.88', severity: 'High' },
   { row: 902, feature: 'Discount_Percent', value: '98%', model: 'DBSCAN Cluster', score: '0.82', severity: 'Medium' },
@@ -20,6 +21,10 @@ const columns = [
 ];
 
 const Anomaly = () => {
+  const { activeDataset, anomalyResults } = useDataset();
+
+  const records = anomalyResults && anomalyResults.length > 0 ? anomalyResults : defaultAnomalyRecords;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div>
@@ -27,7 +32,7 @@ const Anomaly = () => {
           Machine Learning Anomaly Detection
         </h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          Multi-dimensional anomaly detection powered by Isolation Forest, LOF, and DBSCAN clustering.
+          Multi-dimensional anomaly detection for <strong>{activeDataset?.originalName || 'Active Dataset'}</strong> powered by Isolation Forest, LOF, and DBSCAN.
         </p>
       </div>
 
@@ -37,9 +42,9 @@ const Anomaly = () => {
 
       <div className="glass-card" style={{ padding: '1.5rem' }}>
         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '1rem' }}>
-          Flagged ML Anomalies
+          Flagged ML Anomalies ({records.length} Records)
         </h3>
-        <DataTable columns={columns} data={anomalyRecords} />
+        <DataTable columns={columns} data={records} />
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { generateReport } from '../services/reportApi';
 import Loader from '../components/Loader';
+import { useDataset } from '../context/DatasetContext';
 import { FileText, FileSpreadsheet, Presentation, Download, CheckCircle } from 'lucide-react';
 
 const Reports = () => {
+  const { activeDataset } = useDataset();
   const [loading, setLoading] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState(null);
 
@@ -11,7 +13,8 @@ const Reports = () => {
     setLoading(true);
     setDownloadUrl(null);
     try {
-      const res = await generateReport(type, 'DS-MOCK-001');
+      const targetId = activeDataset?._id || activeDataset?.filename || 'DS-DEFAULT-001';
+      const res = await generateReport(type, targetId);
       setDownloadUrl(res.fileUrl);
     } catch (err) {
       alert('Report generation error: ' + err.message);
@@ -19,6 +22,7 @@ const Reports = () => {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>

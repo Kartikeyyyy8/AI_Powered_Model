@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import UploadBox from '../components/UploadBox';
 import Loader from '../components/Loader';
-import { uploadDatasetFile } from '../services/uploadApi';
+import { useDataset } from '../context/DatasetContext';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 
 const Upload = () => {
+  const { uploadDataset } = useDataset();
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -16,17 +17,18 @@ const Upload = () => {
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      const response = await uploadDatasetFile(file);
+      await uploadDataset(file);
       setStatusMessage(`Dataset "${file.name}" uploaded successfully!`);
       setTimeout(() => {
         navigate('/dashboard');
-      }, 1500);
+      }, 1200);
     } catch (err) {
       setErrorMessage(err.message || 'Upload failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>

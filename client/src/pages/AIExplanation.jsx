@@ -1,7 +1,13 @@
 import React from 'react';
-import { Sparkles, Bot, AlertCircle, CheckSquare } from 'lucide-react';
+import { Bot, AlertCircle, CheckSquare } from 'lucide-react';
+import { useDataset } from '../context/DatasetContext';
 
 const AIExplanation = () => {
+  const { activeDataset, validationResults } = useDataset();
+
+  const datasetName = activeDataset?.originalName || 'ecommerce_transactions.csv';
+  const qualityScore = validationResults?.qualityScore || 94.2;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div>
@@ -9,7 +15,7 @@ const AIExplanation = () => {
           AI Narrative Explanations
         </h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          LLM-generated root cause diagnostic summaries and automated fix recommendations.
+          LLM-generated root cause diagnostic summaries and automated fix recommendations for <strong>{datasetName}</strong>.
         </p>
       </div>
 
@@ -35,10 +41,10 @@ const AIExplanation = () => {
           borderLeft: '4px solid var(--accent-primary)'
         }}>
           <p style={{ marginBottom: '1rem' }}>
-            <strong>Executive Summary:</strong> The processed dataset <code>ecommerce_transactions.csv</code> scored an overall <strong>94.2/100</strong>. The data exhibits high structural completeness (98.2%), but contains 14 statistical anomalies primarily concentrated in the <code>Price</code> and <code>Quantity</code> features.
+            <strong>Executive Summary:</strong> The processed dataset <code>{datasetName}</code> scored an overall <strong>{qualityScore}/100</strong>. The data exhibits high structural completeness, but contains statistical anomalies primarily concentrated in price and numeric features.
           </p>
           <p>
-            <strong>Root Cause Analysis:</strong> Three transactions reported extreme price spikes (&gt; 3.5 Z-score standard deviations), traced back to missing currency decimal points during client-side payment gateway serialization.
+            <strong>Root Cause Analysis:</strong> High Z-score deviations traced back to missing decimal points and unexpected date string variations during client serialization.
           </p>
         </div>
 
@@ -48,7 +54,7 @@ const AIExplanation = () => {
               <AlertCircle size={18} /> High Priority Alert
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Row #142 has an unparsed price string formatted as <code>"8450000"</code> instead of <code>"$845.00"</code>.
+              Unparsed raw string values detected in numeric columns in <code>{datasetName}</code>.
             </p>
           </div>
 
@@ -57,7 +63,7 @@ const AIExplanation = () => {
               <CheckSquare size={18} /> Recommended Action
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Run the automated <code>cleaning.ipynb</code> script to parse prices and impute missing date stamps.
+              Execute automated <code>cleaning.py</code> pipeline to parse price strings and impute missing fields.
             </p>
           </div>
         </div>

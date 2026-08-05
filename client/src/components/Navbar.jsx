@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bell, ShieldCheck, Cpu, User } from 'lucide-react';
+import DatasetSelector from './DatasetSelector';
 
 const Navbar = () => {
   return (
@@ -43,6 +44,8 @@ const Navbar = () => {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+        <DatasetSelector />
+
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -57,6 +60,7 @@ const Navbar = () => {
           <ShieldCheck size={16} />
           System Operational
         </div>
+
 
         <button style={{
           background: 'transparent',

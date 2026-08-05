@@ -3,8 +3,9 @@ import DataTable from '../components/DataTable';
 import SeverityBadge from '../components/SeverityBadge';
 import ChartCard from '../components/ChartCard';
 import MissingChart from '../charts/MissingChart';
+import { useDataset } from '../context/DatasetContext';
 
-const validationIssues = [
+const defaultValidationIssues = [
   { id: 1, field: 'Price', issue: 'Negative numeric price found (-$45.00)', type: 'Value Range', severity: 'High' },
   { id: 2, field: 'Date', issue: 'Invalid format standard (07/32/2026)', type: 'Date Format', severity: 'Medium' },
   { id: 3, field: 'Product_ID', issue: 'Duplicate Transaction ID detected', type: 'Uniqueness', severity: 'Critical' },
@@ -21,6 +22,10 @@ const columns = [
 ];
 
 const Validation = () => {
+  const { activeDataset, validationResults } = useDataset();
+
+  const issuesList = validationResults?.issues || defaultValidationIssues;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div>
@@ -28,7 +33,7 @@ const Validation = () => {
           Validation & Business Rules Engine
         </h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          Detailed audit logs for missing values, datatype mismatches, and custom business logic rules.
+          Detailed audit logs for missing values and custom business logic rules for <strong>{activeDataset?.originalName || 'Active Dataset'}</strong>.
         </p>
       </div>
 
@@ -38,9 +43,9 @@ const Validation = () => {
 
       <div className="glass-card" style={{ padding: '1.5rem' }}>
         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '1rem' }}>
-          Rule Violations & Schema Diagnostics
+          Rule Violations & Schema Diagnostics ({issuesList.length} Findings)
         </h3>
-        <DataTable columns={columns} data={validationIssues} />
+        <DataTable columns={columns} data={issuesList} />
       </div>
     </div>
   );
