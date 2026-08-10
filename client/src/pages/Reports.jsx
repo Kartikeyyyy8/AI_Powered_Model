@@ -1,101 +1,355 @@
-import React, { useState } from 'react';
-import { generateReport } from '../services/reportApi';
+import React, { useEffect, useState } from 'react';
+import { fetchReports } from '../services/reportApi';
 import Loader from '../components/Loader';
-import { useDataset } from '../context/DatasetContext';
-import { FileText, FileSpreadsheet, Presentation, Download, CheckCircle } from 'lucide-react';
+import {
+  FileText,
+  FileSpreadsheet,
+  Image as ImageIcon,
+  Download,
+  RefreshCw
+} from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:5000';
 
 const Reports = () => {
-  const { activeDataset } = useDataset();
-  const [loading, setLoading] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [reports, setReports] = useState([]);
+  const [error, setError] = useState(null);
 
-  const handleGenerate = async (type) => {
+  const loadReports = async () => {
     setLoading(true);
-    setDownloadUrl(null);
+    setError(null);
+
     try {
-      const targetId = activeDataset?._id || activeDataset?.filename || 'DS-DEFAULT-001';
-      const res = await generateReport(type, targetId);
-      setDownloadUrl(res.fileUrl);
+      const response = await fetchReports();
+
+      const actualReports = (response.reports || []).filter(
+        (report) => report.filename !== '.gitkeep'
+      );
+
+      setReports(actualReports);
     } catch (err) {
-      alert('Report generation error: ' + err.message);
+      console.error('Failed to load reports:', err);
+      setError(err.message || 'Failed to load reports');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+  const getFileUrl = (report) => {
+    return `${API_BASE_URL}${report.fileUrl}`;
+  };
+
+  const getReportType = (filename) => {
+    const extension = filename.split('.').pop().toLowerCase();
+
+    if (extension === 'xlsx') {
+      return 'Excel Audit Report';
+    }
+
+    if (extension === 'json') {
+      return 'Pipeline Report';
+    }
+
+    if (extension === 'png') {
+      if (filename.includes('dataset_score')) {
+        return 'Dataset Score Chart';
+      }
+
+      if (filename.includes('missing_values')) {
+        return 'Missing Values Chart';
+      }
+
+      if (filename.includes('severity_distribution')) {
+        return 'Severity Distribution Chart';
+      }
+
+      return 'Analysis Chart';
+    }
+
+    return 'Report';
+  };
+
+  const getReportDescription = (filename) => {
+    if (filename.endsWith('.xlsx')) {
+      return 'Complete ML Engine audit workbook containing data-quality analysis.';
+    }
+
+    if (filename.endsWith('.json')) {
+      return 'Machine-readable pipeline results from the ML Engine.';
+    }
+
+    if (filename.includes('dataset_score')) {
+      return 'Visual representation of the overall dataset quality score.';
+    }
+
+    if (filename.includes('missing_values')) {
+      return 'Visual analysis of missing values across the dataset.';
+    }
+
+    if (filename.includes('severity_distribution')) {
+      return 'Distribution of validation and business-rule violation severity.';
+    }
+
+    return 'Generated ML Engine analysis artifact.';
+  };
+
+  const getReportIcon = (filename) => {
+    const extension = filename.split('.').pop().toLowerCase();
+
+    if (extension === 'xlsx') {
+      return <FileSpreadsheet size={28} />;
+    }
+
+    if (extension === 'json') {
+      return <FileText size={28} />;
+    }
+
+    return <ImageIcon size={28} />;
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '0 KB';
+
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  };
+
+  const formatDate = (date) => {
+    if (!date) return '';
+
+    return new Date(date).toLocaleString('en-IN', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    });
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div>
-        <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fff', marginBottom: '0.4rem' }}>
-          Reports & Export Center
-        </h2>
-        <p style={{ color: 'var(--text-muted)' }}>
-          Export executive summary reports in PDF, Microsoft PowerPoint (PPT), or Excel workbook formats.
-        </p>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(244, 63, 94, 0.15)', padding: '1rem', borderRadius: '50%', color: 'var(--accent-rose)' }}>
-            <FileText size={36} />
-          </div>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>PDF Executive Report</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Comprehensive visual document complete with quality charts and audit summaries.
-          </p>
-          <button onClick={() => handleGenerate('PDF')} className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-            Generate PDF
-          </button>
-        </div>
-
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '1rem', borderRadius: '50%', color: 'var(--accent-emerald)' }}>
-            <FileSpreadsheet size={36} />
-          </div>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>Excel Audit Workbook</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Multi-tab workbook containing cleaned dataset, rule violations, and row scores.
-          </p>
-          <button onClick={() => handleGenerate('EXCEL')} className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-            Generate Excel
-          </button>
-        </div>
-
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(245, 158, 11, 0.15)', padding: '1rem', borderRadius: '50%', color: 'var(--accent-amber)' }}>
-            <Presentation size={36} />
-          </div>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>PowerPoint Deck</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Presentation-ready slide deck for executive and stakeholder reviews.
-          </p>
-          <button onClick={() => handleGenerate('PPT')} className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-            Generate PPT
-          </button>
-        </div>
-      </div>
-
-      {loading && <Loader label="Compiling report data and generating export file..." />}
-
-      {downloadUrl && (
-        <div style={{
-          padding: '1.5rem',
-          background: 'rgba(16, 185, 129, 0.15)',
-          border: '1px solid rgba(16, 185, 129, 0.3)',
-          borderRadius: '16px',
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2rem'
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
           display: 'flex',
-          justify: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>
-            <CheckCircle size={24} />
-            <span>Report generated successfully!</span>
-          </div>
-          <a href={downloadUrl} download className="btn-primary">
-            <Download size={18} /> Download Report
-          </a>
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: '1rem'
+        }}
+      >
+        <div>
+          <h2
+            style={{
+              fontSize: '1.75rem',
+              fontWeight: 800,
+              color: '#fff',
+              marginBottom: '0.4rem'
+            }}
+          >
+            Reports & Export Center
+          </h2>
+
+          <p style={{ color: 'var(--text-muted)' }}>
+            Access reports and visual artifacts generated by the AI
+            Data Quality Engine.
+          </p>
         </div>
+
+        <button
+          onClick={loadReports}
+          className="btn-primary"
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <RefreshCw size={18} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <Loader label="Loading ML Engine reports..." />
+      )}
+
+      {/* Error */}
+      {error && !loading && (
+        <div
+          className="glass-card"
+          style={{
+            padding: '1.5rem',
+            color: 'var(--accent-rose)',
+            border: '1px solid rgba(244, 63, 94, 0.3)'
+          }}
+        >
+          Failed to load reports: {error}
+        </div>
+      )}
+
+      {/* No reports */}
+      {!loading && !error && reports.length === 0 && (
+        <div
+          className="glass-card"
+          style={{
+            padding: '2rem',
+            textAlign: 'center',
+            color: 'var(--text-muted)'
+          }}
+        >
+          No ML Engine reports found.
+        </div>
+      )}
+
+      {/* Reports */}
+      {!loading && !error && reports.length > 0 && (
+        <>
+          <div>
+            <h3
+              style={{
+                color: '#fff',
+                fontSize: '1.3rem',
+                fontWeight: 700,
+                marginBottom: '1rem'
+              }}
+            >
+              Generated Reports
+            </h3>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  'repeat(auto-fit, minmax(300px, 1fr))',
+                gap: '1.25rem'
+              }}
+            >
+              {reports.map((report) => {
+                const fileUrl = getFileUrl(report);
+
+                return (
+                  <div
+                    key={report.filename}
+                    className="glass-card"
+                    style={{
+                      padding: '1.5rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '1rem'
+                    }}
+                  >
+                    {/* Icon + title */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.9rem'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '52px',
+                          height: '52px',
+                          borderRadius: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background:
+                            'rgba(59, 130, 246, 0.15)',
+                          color: '#60a5fa'
+                        }}
+                      >
+                        {getReportIcon(report.filename)}
+                      </div>
+
+                      <div>
+                        <h4
+                          style={{
+                            color: '#fff',
+                            fontSize: '1rem',
+                            fontWeight: 700,
+                            margin: 0
+                          }}
+                        >
+                          {getReportType(report.filename)}
+                        </h4>
+
+                        <span
+                          style={{
+                            color: 'var(--text-muted)',
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          {formatSize(report.size)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Filename */}
+                    <div
+                      style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '0.78rem',
+                        wordBreak: 'break-all'
+                      }}
+                    >
+                      {report.filename}
+                    </div>
+
+                    {/* Description */}
+                    <p
+                      style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '0.85rem',
+                        lineHeight: 1.5,
+                        margin: 0
+                      }}
+                    >
+                      {getReportDescription(report.filename)}
+                    </p>
+
+                    {/* Date */}
+                    <div
+                      style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      Generated: {formatDate(report.createdAt)}
+                    </div>
+
+                    {/* Download */}
+                    <a
+                      href={fileUrl}
+                      download={report.filename}
+                      className="btn-primary"
+                      style={{
+                        width: '100%',
+                        justifyContent: 'center',
+                        textDecoration: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <Download size={18} />
+                      Download
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

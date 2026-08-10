@@ -11,3 +11,4 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 jupyter>=1.0.0
 nbformat>=5.9.0
+plotly

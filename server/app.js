@@ -14,21 +14,34 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploads and reports static folders
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/reports', express.static(path.join(__dirname, '../reports')));
+// Serve uploaded files
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'uploads'))
+);
 
-// Mount API Routes
+// Serve REAL ML Engine reports
+const reportsPath = path.join(__dirname, '../ml_engine/reports');
+
+console.log('ML REPORTS PATH:', reportsPath);
+
+app.use('/reports', express.static(reportsPath));
+
+// API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/validation', validationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'AI-Powered Data Quality Backend API Server Active' });
+  res.json({
+    status: 'OK',
+    message: 'AI-Powered Data Quality Backend API Server Active'
+  });
 });
 
-// Error handling middleware
+// Error handler
 app.use(errorHandler);
 
 module.exports = app;
