@@ -99,6 +99,7 @@ KNOWN_CATEGORIES: set = {
 ANOMALY_CONTAMINATION: float = 0.05   # Expected proportion of anomalies
 ANOMALY_RANDOM_STATE: int = 42        # Seed for reproducibility
 LOF_N_NEIGHBORS: int = 20             # Local Outlier Factor neighbours
+SVM_NU: float = 0.05                  # One-Class SVM nu ≈ upper bound on outlier fraction
 
 # ---------------------------------------------------------------------------
 # Statistical Outlier Defaults

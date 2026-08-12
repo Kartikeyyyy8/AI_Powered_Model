@@ -282,28 +282,58 @@ def export_excel_report(
             anom_rows: List[dict] = []
             if anomaly_result and isinstance(anomaly_result, dict):
                 features_str = ", ".join(anomaly_result.get("features_used", []))
-                anom_rows = [
-                    {
-                        "Model":      "Isolation Forest",
-                        "Anomalies":  anomaly_result.get("isolation_forest_anomalies", 0),
-                        "Percentage": anomaly_result.get("isolation_forest_pct", 0.0),
-                        "Features":   features_str,
-                    },
-                    {
-                        "Model":      "Local Outlier Factor",
-                        "Anomalies":  anomaly_result.get("lof_anomalies", 0),
-                        "Percentage": anomaly_result.get("lof_pct", 0.0),
-                        "Features":   features_str,
-                    },
-                    {
-                        "Model":      "Consensus (IsoForest + LOF)",
-                        "Anomalies":  anomaly_result.get("consensus_anomalies", 0),
-                        "Percentage": anomaly_result.get("consensus_pct", 0.0),
-                        "Features":   features_str,
-                    },
-                ]
+                # Prefer model_comparison list (three-model output)
+                model_comparison = anomaly_result.get("model_comparison")
+                if model_comparison:
+                    for mc in model_comparison:
+                        anom_rows.append({
+                            "Model":             mc.get("model", ""),
+                            "Anomalies":         mc.get("anomalies", 0),
+                            "Percentage":        mc.get("anomaly_pct", 0.0),
+                            "Execution_Time_s":  mc.get("execution_time_sec", 0.0),
+                            "Rows_Analysed":     mc.get("rows_analysed", 0),
+                            "Features":          features_str,
+                        })
+                else:
+                    # Fallback for older two-model output
+                    anom_rows = [
+                        {
+                            "Model": "Isolation Forest",
+                            "Anomalies": anomaly_result.get("isolation_forest_anomalies", 0),
+                            "Percentage": anomaly_result.get("isolation_forest_pct", 0.0),
+                            "Execution_Time_s": 0.0,
+                            "Rows_Analysed": anomaly_result.get("total_rows_analysed", 0),
+                            "Features": features_str,
+                        },
+                        {
+                            "Model": "Local Outlier Factor",
+                            "Anomalies": anomaly_result.get("lof_anomalies", 0),
+                            "Percentage": anomaly_result.get("lof_pct", 0.0),
+                            "Execution_Time_s": 0.0,
+                            "Rows_Analysed": anomaly_result.get("total_rows_analysed", 0),
+                            "Features": features_str,
+                        },
+                        {
+                            "Model": "One-Class SVM",
+                            "Anomalies": anomaly_result.get("one_class_svm_anomalies", 0),
+                            "Percentage": anomaly_result.get("one_class_svm_pct", 0.0),
+                            "Execution_Time_s": 0.0,
+                            "Rows_Analysed": anomaly_result.get("total_rows_analysed", 0),
+                            "Features": features_str,
+                        },
+                    ]
+                # Always append consensus row
+                anom_rows.append({
+                    "Model": "Consensus (>= 2/3 models)",
+                    "Anomalies": anomaly_result.get("consensus_anomalies", 0),
+                    "Percentage": anomaly_result.get("consensus_pct", 0.0),
+                    "Execution_Time_s": None,
+                    "Rows_Analysed": anomaly_result.get("total_rows_analysed", 0),
+                    "Features": features_str,
+                })
             if not anom_rows:
-                anom_rows = [{"Model": "N/A", "Anomalies": 0, "Percentage": 0.0, "Features": "N/A"}]
+                anom_rows = [{"Model": "N/A", "Anomalies": 0, "Percentage": 0.0,
+                              "Execution_Time_s": 0.0, "Rows_Analysed": 0, "Features": "N/A"}]
 
             pd.DataFrame(anom_rows).to_excel(writer, sheet_name="Anomalies", index=False)
             _format_sheet(wb["Anomalies"])
@@ -455,13 +485,14 @@ def export_json_report(
         "violations":             compact_rule_violations,
     }
 
-    # Anomaly summary (exclude large index lists)
+    # Anomaly summary: exclude only the large raw index list; keep anomaly_records
+    # (already capped at 200 by anomaly.py) so the backend API can serve them.
     anomaly_summary: Dict[str, Any] = {}
     if anomaly_result and isinstance(anomaly_result, dict):
         anomaly_summary = {
             k: v
             for k, v in anomaly_result.items()
-            if k not in ("consensus_indices", "anomaly_records")
+            if k not in ("consensus_indices",)  # strip only the raw index list
         }
 
     report = {

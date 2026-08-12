@@ -7,6 +7,7 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const validationRoutes = require('./routes/validationRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const anomalyRoutes = require('./routes/anomalyRoutes');
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/validation', validationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/anomaly', anomalyRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
