@@ -1,0 +1,126 @@
+AI POWERED DATA QUALITY MODEL 
+Project Setup & Run Instructions
+
+
+1. CLONE THE REPOSITORY
+
+git clone <GITHUB_REPOSITORY_URL>
+cd AI_Powered_Data_Quality_Model
+
+
+2. INSTALL FRONTEND DEPENDENCIES
+
+Open a terminal and run:
+
+cd client
+npm install
+
+
+3. INSTALL BACKEND DEPENDENCIES
+
+Open another terminal and run:
+
+cd server
+npm install
+
+
+4. SET UP THE GEMINI API KEY
+
+Create the following file:
+
+server/.env
+
+Add:
+
+GEMINI_API_KEY=your_gemini_api_key
+
+IMPORTANT:
+Do not commit or share server/.env because it contains the Gemini API key.
+
+
+5. START THE ML ENGINE
+
+From the project root:
+
+cd ml_engine
+.venv\Scripts\activate
+uv add -r requirements.txt
+
+
+6. START THE BACKEND
+
+Open another terminal:
+
+cd server
+npm run dev
+
+Backend:
+http://localhost:5000
+
+
+7. START THE FRONTEND
+
+Open another terminal:
+
+cd client
+npm run dev
+
+Frontend:
+http://localhost:3000
+
+
+8. OPEN THE APPLICATION
+
+Open your browser and go to:
+
+http://localhost:3000
+
+
+9. ANOMALY DETECTION
+
+Upload the dataset and run the ML engine.
+
+Then open:
+
+Anomaly Detection
+
+The dashboard displays:
+
+- Isolation Forest results
+- Local Outlier Factor (LOF) results
+- One-Class SVM results
+- Model comparison
+- Execution times
+- Consensus anomalies
+- Anomaly records
+- Gemini-powered AI model comparison
+
+
+IMPORTANT
+
+You need three running processes/terminals:
+
+Terminal 1:
+ML Engine
+
+cd ml_engine
+uv run python main.py
+
+Terminal 2:
+Backend
+
+cd server
+npm run dev
+
+Terminal 3:
+Frontend
+
+cd client
+npm run dev
+
+
+The frontend is available at:
+http://localhost:3000
+
+The backend is available at:
+http://localhost:5000

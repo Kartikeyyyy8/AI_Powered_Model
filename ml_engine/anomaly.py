@@ -1,37 +1,34 @@
 """
 anomaly.py
-----------
+---------
 Machine Learning Anomaly Detection Module for the ML Data Quality Engine.
 
-Responsibilities
-----------------
-- Prepare a numeric feature matrix from the cleaned dataframe (float32 for memory efficiency)
-- Run Isolation Forest anomaly detection
-- Run Local Outlier Factor (LOF) anomaly detection
-- Run One-Class SVM via SGDOneClassSVM (linear-time, safe for 100k+ rows)
-- Measure per-model execution time
-- Return a structured summary with:
-    - per-model anomaly counts, percentages, and execution times
-    - model_comparison list
-    - consensus anomalies (flagged by >= 2 of 3 models)
-    - anomaly_records (up to 200, enriched with models_flagged and vote_count)
+Models:
+    1. Isolation Forest
+    2. Local Outlier Factor (LOF)
+    3. SGD One-Class SVM
 
-Performance Notes
------------------
-- SGDOneClassSVM is used instead of kernel OneClassSVM — it is O(n) not O(n²),
-  safe for datasets of 100,000+ rows.
-- IsolationForest uses n_jobs=-1 (all CPU cores).
-- Feature matrix is kept as float32 to halve memory vs float64.
-- Dataframe is not copied unnecessarily.
+The models use independent decision boundaries instead of forcing
+Isolation Forest and LOF to return exactly the same percentage of
+anomalies.
 
-Usage
------
-    from anomaly import run_ml_anomalies
+Isolation Forest:
+    contamination="auto"
 
-    result = run_ml_anomalies(df_clean)
-    # result["model_comparison"]       → list of per-model dicts
-    # result["consensus_anomalies"]    → int count
-    # result["anomaly_records"]        → list of anomalous row dicts (up to 200)
+LOF:
+    contamination="auto"
+
+One-Class SVM:
+    nu=SVM_NU from config.py
+
+The module also calculates:
+    - per-model anomaly counts
+    - anomaly percentages
+    - execution time
+    - model scores
+    - pairwise model agreement
+    - 2-out-of-3 consensus
+    - anomaly records
 """
 
 import logging
@@ -40,6 +37,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import SGDOneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
@@ -53,172 +51,246 @@ from config import (
     SVM_NU,
 )
 
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOG_FORMAT,
+)
+
 logger = logging.getLogger("ml_engine.anomaly")
 
 
 # ---------------------------------------------------------------------------
-# Internal Helpers
+# Feature Preparation
 # ---------------------------------------------------------------------------
-
 
 def _prepare_feature_matrix(
     df: pd.DataFrame,
     feature_cols: List[str] = None,
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Extract, impute (median), scale, and cast to float32 the anomaly feature matrix.
+    Prepare the numerical feature matrix.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Cleaned dataframe (Price should already be numeric after cleaning).
-    feature_cols : list[str] | None
-        Explicit list of columns to use as features. Defaults to
-        ``["Quantity", "Price"]`` — the only columns that represent
-        genuine behavioral measurements in this dataset.
+    Default features:
+        Quantity
+        Price
 
-        IMPORTANT: do NOT auto-detect numeric-looking object columns such as
-        Transaction_ID or Customer_ID (e.g. "T0001" → 1, "C2205" → 2205).
-        IDs are arbitrary assigned labels — they carry no behavioral signal.
-        Always pass an explicit whitelist.
-
-    Returns
-    -------
-    tuple[np.ndarray, list[str]]
-        float32-scaled feature matrix and the list of column names used.
-
-    Raises
-    ------
-    ValueError
-        If no usable numeric columns exist after imputation.
+    Steps:
+        1. Select explicit feature columns
+        2. Convert to numeric
+        3. Median imputation
+        4. Standard scaling
+        5. Convert to float32
     """
+
     if feature_cols is None:
         feature_cols = ["Quantity", "Price"]
 
-    available = [c for c in feature_cols if c in df.columns]
+    available = [
+        column
+        for column in feature_cols
+        if column in df.columns
+    ]
+
     if not available:
         raise ValueError(
-            f"None of the requested feature columns {feature_cols} are present in the DataFrame."
+            f"None of the requested feature columns "
+            f"{feature_cols} are present in the DataFrame."
         )
 
     X = df[available].copy()
-    for col in X.columns:
-        X[col] = pd.to_numeric(X[col], errors="coerce")
-        if X[col].isna().any():
-            X[col] = X[col].fillna(X[col].median())
 
+    for column in X.columns:
+
+        X[column] = pd.to_numeric(
+            X[column],
+            errors="coerce",
+        )
+
+        if X[column].isna().any():
+
+            median_value = X[column].median()
+
+            if pd.isna(median_value):
+                median_value = 0.0
+
+            X[column] = X[column].fillna(
+                median_value
+            )
+
+    # Remove columns that are still unusable
     X = X.dropna(axis=1)
+
     if X.empty:
-        raise ValueError("All requested feature columns are empty after imputation.")
+        raise ValueError(
+            "All requested feature columns are empty after imputation."
+        )
 
     scaler = StandardScaler()
-    # Cast to float32 to reduce memory usage (safe for all three models)
-    X_scaled = scaler.fit_transform(X).astype(np.float32)
+
+    X_scaled = scaler.fit_transform(X).astype(
+        np.float32
+    )
+
     logger.info(
-        "Feature matrix prepared: %d rows × %d features (%s).",
+        "Feature matrix prepared: %d rows x %d features (%s).",
         *X_scaled.shape,
         list(X.columns),
     )
+
     return X_scaled, X.columns.tolist()
 
 
 # ---------------------------------------------------------------------------
-# Model Runners (each returns labels + elapsed seconds)
+# Isolation Forest
 # ---------------------------------------------------------------------------
-
 
 def run_isolation_forest(
     X_scaled: np.ndarray,
-    contamination: float = ANOMALY_CONTAMINATION,
     random_state: int = ANOMALY_RANDOM_STATE,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    Apply Isolation Forest anomaly detection.
+    Run Isolation Forest using its own automatic threshold.
 
-    Uses n_jobs=-1 to leverage all available CPU cores.
+    IMPORTANT:
+        contamination='auto' means the model is NOT forced
+        to return exactly 5% anomalies.
 
-    Returns
-    -------
-    tuple[np.ndarray, float]
-        Labels (``-1`` = anomaly, ``1`` = normal) and elapsed seconds.
+    Returns:
+        labels
+        scores
+        execution_time
     """
+
     t0 = time.perf_counter()
-    iso = IsolationForest(
-        contamination=contamination,
+
+    model = IsolationForest(
+        contamination="auto",
         random_state=random_state,
         n_estimators=100,
         n_jobs=-1,
     )
-    labels = iso.fit_predict(X_scaled)
-    elapsed = round(time.perf_counter() - t0, 3)
-    n_anom = int((labels == -1).sum())
-    logger.info("Isolation Forest: %d anomaly/anomalies detected in %.2fs.", n_anom, elapsed)
-    return labels, elapsed
 
+    labels = model.fit_predict(
+        X_scaled
+    )
+
+    # Higher score = more normal
+    # Lower score = more anomalous
+    scores = model.decision_function(
+        X_scaled
+    )
+
+    elapsed = round(
+        time.perf_counter() - t0,
+        3,
+    )
+
+    anomaly_count = int(
+        (labels == -1).sum()
+    )
+
+    logger.info(
+        "Isolation Forest: %d anomalies detected in %.3fs.",
+        anomaly_count,
+        elapsed,
+    )
+
+    return labels, scores, elapsed
+
+
+# ---------------------------------------------------------------------------
+# Local Outlier Factor
+# ---------------------------------------------------------------------------
 
 def run_local_outlier_factor(
     X_scaled: np.ndarray,
     n_neighbors: int = LOF_N_NEIGHBORS,
-    contamination: float = ANOMALY_CONTAMINATION,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    Apply Local Outlier Factor (LOF) anomaly detection.
+    Run Local Outlier Factor using its own automatic threshold.
 
-    Returns
-    -------
-    tuple[np.ndarray, float]
-        Labels (``-1`` = anomaly, ``1`` = normal) and elapsed seconds.
+    IMPORTANT:
+        contamination='auto' means LOF determines its own
+        anomaly boundary instead of being forced to return
+        exactly 5%.
+
+    Returns:
+        labels
+        scores
+        execution_time
     """
+
     t0 = time.perf_counter()
-    lof = LocalOutlierFactor(
-        n_neighbors=min(n_neighbors, len(X_scaled) - 1),
-        contamination=contamination,
-    )
-    labels = lof.fit_predict(X_scaled)
-    elapsed = round(time.perf_counter() - t0, 3)
-    n_anom = int((labels == -1).sum())
-    logger.info("LOF: %d anomaly/anomalies detected in %.2fs.", n_anom, elapsed)
-    return labels, elapsed
 
+    model = LocalOutlierFactor(
+        n_neighbors=min(
+            n_neighbors,
+            len(X_scaled) - 1,
+        ),
+        contamination="auto",
+    )
+
+    labels = model.fit_predict(
+        X_scaled
+    )
+
+    # negative_outlier_factor_:
+    # values closer to -1 = normal
+    # more negative = more anomalous
+    raw_scores = model.negative_outlier_factor_
+
+    # Convert so higher = more anomalous.
+    anomaly_scores = -raw_scores
+
+    elapsed = round(
+        time.perf_counter() - t0,
+        3,
+    )
+
+    anomaly_count = int(
+        (labels == -1).sum()
+    )
+
+    logger.info(
+        "LOF: %d anomalies detected in %.3fs.",
+        anomaly_count,
+        elapsed,
+    )
+
+    return labels, anomaly_scores, elapsed
+
+
+# ---------------------------------------------------------------------------
+# SGD One-Class SVM
+# ---------------------------------------------------------------------------
 
 def run_sgd_one_class_svm(
     X_scaled: np.ndarray,
     nu: float = SVM_NU,
     random_state: int = ANOMALY_RANDOM_STATE,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    Apply One-Class SVM anomaly detection using SGDOneClassSVM.
+    Run SGD One-Class SVM.
 
-    SGDOneClassSVM is a linear-time (O(n)) approximation of the kernel
-    One-Class SVM. It is safe for datasets with 100,000+ rows.
-    The standard sklearn.svm.OneClassSVM uses an O(n²) kernel which
-    would hang on large datasets — it is intentionally NOT used here.
+    nu controls the expected fraction of anomalies/support vectors.
 
-    Parameters
-    ----------
-    X_scaled : np.ndarray
-        Pre-scaled feature matrix (float32 is fine).
-    nu : float
-        Upper bound on the fraction of training errors and lower bound on
-        the fraction of support vectors. Analogous to contamination rate.
-    random_state : int
-        Seed for reproducibility.
+    Unlike Isolation Forest and LOF, One-Class SVM requires
+    nu to define its decision boundary.
 
-    Returns
-    -------
-    tuple[np.ndarray, float]
-        Labels (``-1`` = anomaly, ``1`` = normal) and elapsed seconds.
+    Returns:
+        labels
+        anomaly scores
+        execution_time
     """
+
     t0 = time.perf_counter()
 
-    # Use 'optimal' learning rate which auto-selects based on nu and the
-    # data. max_iter=1000 ensures convergence on distributions with
-    # a wide feature range (e.g. Price after cleaning retains negatives).
-    svm = SGDOneClassSVM(
+    model = SGDOneClassSVM(
         nu=nu,
         random_state=random_state,
         shuffle=True,
@@ -226,36 +298,114 @@ def run_sgd_one_class_svm(
         learning_rate="optimal",
         tol=1e-4,
     )
-    svm.fit(X_scaled)
-    labels = svm.predict(X_scaled)
-    n_anom = int((labels == -1).sum())
 
-    # Convergence guard: if 0 anomalies detected (degenerate boundary),
-    # retry with inverted label convention — some versions of SGDOneClassSVM
-    # produce all +1 labels when the hyperplane collapses. In that case,
-    # score-based thresholding is used as a fallback.
-    if n_anom == 0 and len(X_scaled) > 10:
+    model.fit(
+        X_scaled
+    )
+
+    labels = model.predict(
+        X_scaled
+    )
+
+    # decision_function:
+    # positive = normal side
+    # negative = anomaly side
+    decision_scores = model.decision_function(
+        X_scaled
+    )
+
+    # Convert so higher = more anomalous
+    anomaly_scores = -decision_scores
+
+    anomaly_count = int(
+        (labels == -1).sum()
+    )
+
+    # Fallback for degenerate training
+    if anomaly_count == 0 and len(X_scaled) > 10:
+
         logger.warning(
-            "SGDOneClassSVM detected 0 anomalies — applying score-based fallback."
-        )
-        scores = svm.score_samples(X_scaled)
-        threshold = float(np.percentile(scores, nu * 100))
-        labels = np.where(scores <= threshold, -1, 1)
-        n_anom = int((labels == -1).sum())
-        logger.info(
-            "SGDOneClassSVM fallback: %d anomaly/anomalies via score percentile (nu=%.2f).",
-            n_anom, nu
+            "SGDOneClassSVM detected 0 anomalies. "
+            "Applying score-based fallback."
         )
 
-    elapsed = round(time.perf_counter() - t0, 3)
-    logger.info("SGD One-Class SVM: %d anomaly/anomalies detected in %.2fs.", n_anom, elapsed)
-    return labels, elapsed
+        raw_scores = model.score_samples(
+            X_scaled
+        )
+
+        threshold = float(
+            np.percentile(
+                raw_scores,
+                nu * 100,
+            )
+        )
+
+        labels = np.where(
+            raw_scores <= threshold,
+            -1,
+            1,
+        )
+
+        anomaly_scores = -raw_scores
+
+        anomaly_count = int(
+            (labels == -1).sum()
+        )
+
+    elapsed = round(
+        time.perf_counter() - t0,
+        3,
+    )
+
+    logger.info(
+        "One-Class SVM: %d anomalies detected in %.3fs.",
+        anomaly_count,
+        elapsed,
+    )
+
+    return labels, anomaly_scores, elapsed
 
 
 # ---------------------------------------------------------------------------
-# Orchestrator
+# Utility Functions
 # ---------------------------------------------------------------------------
 
+def _percentage(
+    count: int,
+    total: int,
+) -> float:
+
+    if total == 0:
+        return 0.0
+
+    return round(
+        (count / total) * 100,
+        2,
+    )
+
+
+def _safe_float(
+    value: Any,
+) -> float:
+
+    try:
+        value = float(value)
+
+        if np.isnan(value):
+            return 0.0
+
+        if np.isinf(value):
+            return 0.0
+
+        return round(value, 6)
+
+    except Exception:
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Main ML Pipeline
+# ---------------------------------------------------------------------------
 
 def run_ml_anomalies(
     df: pd.DataFrame,
@@ -264,221 +414,546 @@ def run_ml_anomalies(
     feature_cols: List[str] = None,
 ) -> Dict[str, Any]:
     """
-    Run all three ML anomaly detection models and return a structured summary.
+    Run all three anomaly detection models.
 
-    Models
-    ------
-    1. Isolation Forest   — ensemble tree-based, O(n log n)
-    2. Local Outlier Factor — density-based, O(n * n_neighbors)
-    3. One-Class SVM (SGDOneClassSVM) — linear kernel, O(n), safe for 100k rows
+    IMPORTANT:
+        Isolation Forest and LOF use their own automatic
+        anomaly thresholds.
 
-    Consensus
-    ---------
-    A row is a consensus anomaly if flagged by >= 2 of the 3 models.
-    - vote_count = 1 → low confidence
-    - vote_count = 2 → high confidence
-    - vote_count = 3 → very high confidence
+        One-Class SVM uses SVM_NU.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Cleaned dataframe. Numeric columns (Quantity, Price) must be present.
-    contamination : float
-        Expected proportion of anomalies. Default: 0.05.
-    random_state : int
-        Seed for Isolation Forest and SGDOneClassSVM reproducibility. Default: 42.
-    feature_cols : list[str] | None
-        Explicit feature columns to use. Defaults to ``["Quantity", "Price"]``.
+    Therefore the three models are NOT forced to produce
+    exactly the same number of anomalies.
 
-    Returns
-    -------
-    dict
-        ``features_used``               — columns used for detection
-        ``total_rows_analysed``         — number of rows processed
-        ``contamination_rate``          — contamination/nu parameter used
-        ``isolation_forest_anomalies``  — count from Isolation Forest
-        ``isolation_forest_pct``        — percentage from Isolation Forest
-        ``lof_anomalies``               — count from LOF
-        ``lof_pct``                     — percentage from LOF
-        ``one_class_svm_anomalies``     — count from One-Class SVM
-        ``one_class_svm_pct``           — percentage from One-Class SVM
-        ``model_comparison``            — list of per-model dicts with timing
-        ``consensus_anomalies``         — count flagged by >= 2 models
-        ``consensus_pct``               — percentage flagged by >= 2 models
-        ``consensus_indices``           — row indices of consensus anomalies
-        ``anomaly_records``             — list of anomalous row dicts (up to 200)
+    Consensus:
+        vote_count >= 2
     """
+
     # -----------------------------------------------------------------------
-    # Empty DataFrame guard
+    # Empty DataFrame
     # -----------------------------------------------------------------------
+
     if df.empty:
-        logger.warning("Empty DataFrame provided; returning zero anomalies.")
-        _empty: Dict[str, Any] = {
+
+        logger.warning(
+            "Empty DataFrame provided."
+        )
+
+        return {
             "features_used": [],
             "total_rows_analysed": 0,
             "contamination_rate": contamination,
+
             "isolation_forest_anomalies": 0,
             "isolation_forest_pct": 0.0,
+
             "lof_anomalies": 0,
             "lof_pct": 0.0,
+
             "one_class_svm_anomalies": 0,
             "one_class_svm_pct": 0.0,
-            "model_comparison": [
-                {"model": "Isolation Forest",   "anomalies": 0, "anomaly_pct": 0.0, "execution_time_sec": 0.0, "rows_analysed": 0},
-                {"model": "Local Outlier Factor","anomalies": 0, "anomaly_pct": 0.0, "execution_time_sec": 0.0, "rows_analysed": 0},
-                {"model": "One-Class SVM",       "anomalies": 0, "anomaly_pct": 0.0, "execution_time_sec": 0.0, "rows_analysed": 0},
-            ],
+
+            "model_comparison": [],
+
+            "pairwise_agreement": {},
+
             "consensus_anomalies": 0,
             "consensus_pct": 0.0,
+
             "consensus_indices": [],
+
             "anomaly_records": [],
         }
-        return _empty
 
     # -----------------------------------------------------------------------
-    # Feature preparation
+    # Prepare Features
     # -----------------------------------------------------------------------
+
     try:
-        X_scaled, feature_cols_used = _prepare_feature_matrix(df, feature_cols=feature_cols)
+
+        X_scaled, feature_cols_used = (
+            _prepare_feature_matrix(
+                df,
+                feature_cols=feature_cols,
+            )
+        )
+
     except ValueError as exc:
-        logger.error("Feature preparation failed: %s", exc)
+
+        logger.error(
+            "Feature preparation failed: %s",
+            exc,
+        )
+
         return {
             "error": str(exc),
             "features_used": [],
             "total_rows_analysed": len(df),
             "contamination_rate": contamination,
+
             "isolation_forest_anomalies": 0,
             "isolation_forest_pct": 0.0,
+
             "lof_anomalies": 0,
             "lof_pct": 0.0,
+
             "one_class_svm_anomalies": 0,
             "one_class_svm_pct": 0.0,
+
             "model_comparison": [],
+
+            "pairwise_agreement": {},
+
             "consensus_anomalies": 0,
             "consensus_pct": 0.0,
+
             "consensus_indices": [],
+
             "anomaly_records": [],
         }
 
     n_rows = len(df)
 
     # -----------------------------------------------------------------------
-    # Run models
+    # Run Models
     # -----------------------------------------------------------------------
-    iso_labels, iso_time = run_isolation_forest(
-        X_scaled, contamination=contamination, random_state=random_state
-    )
-    lof_labels, lof_time = run_local_outlier_factor(
-        X_scaled, contamination=contamination
-    )
-    svm_labels, svm_time = run_sgd_one_class_svm(
-        X_scaled, nu=contamination, random_state=random_state
+
+    iso_labels, iso_scores, iso_time = (
+        run_isolation_forest(
+            X_scaled,
+            random_state=random_state,
+        )
     )
 
-    # -----------------------------------------------------------------------
-    # Boolean masks
-    # -----------------------------------------------------------------------
-    iso_mask = iso_labels == -1
-    lof_mask = lof_labels == -1
-    svm_mask = svm_labels == -1
-
-    # -----------------------------------------------------------------------
-    # Consensus: vote_count >= 2 (any two or all three models agree)
-    # -----------------------------------------------------------------------
-    vote_counts = iso_mask.astype(np.int8) + lof_mask.astype(np.int8) + svm_mask.astype(np.int8)
-    consensus_mask = vote_counts >= 2
-
-    consensus_indices = df.index[consensus_mask].tolist()
-
-    # -----------------------------------------------------------------------
-    # Collect anomaly records (up to 200)
-    # -----------------------------------------------------------------------
-    # Determine all rows flagged by at least one model; prioritise consensus rows
-    any_flag_mask = vote_counts >= 1
-    all_flag_indices = df.index[any_flag_mask].tolist()
-
-    # Sort so consensus rows appear first
-    consensus_set = set(consensus_indices)
-    sorted_indices = (
-        [i for i in consensus_indices]
-        + [i for i in all_flag_indices if i not in consensus_set]
+    lof_labels, lof_scores, lof_time = (
+        run_local_outlier_factor(
+            X_scaled,
+        )
     )
-    sorted_indices = sorted_indices[:200]  # hard cap — never send 100k rows to frontend
 
-    # Build model name lookup arrays (aligned with df.index)
-    index_to_pos = {idx: pos for pos, idx in enumerate(df.index)}
-
-    model_names = ["Isolation Forest", "Local Outlier Factor", "One-Class SVM"]
-    model_masks = [iso_mask, lof_mask, svm_mask]
-
-    anomaly_records: List[dict] = []
-    for idx in sorted_indices:
-        pos = index_to_pos[idx]
-        flagging_models = [
-            name for name, mask in zip(model_names, model_masks) if mask[pos]
-        ]
-        row_dict: Dict[str, Any] = {}
-        for k, v in df.loc[idx].to_dict().items():
-            row_dict[k] = v.isoformat() if hasattr(v, "isoformat") else v
-        row_dict["anomaly_index"] = int(idx)
-        row_dict["model_vote_count"] = int(vote_counts[pos])
-        row_dict["models_flagged"] = flagging_models
-        anomaly_records.append(row_dict)
+    svm_labels, svm_scores, svm_time = (
+        run_sgd_one_class_svm(
+            X_scaled,
+            nu=SVM_NU,
+            random_state=random_state,
+        )
+    )
 
     # -----------------------------------------------------------------------
-    # Counts and percentages
+    # Convert Labels to Boolean Masks
     # -----------------------------------------------------------------------
-    iso_count = int(iso_mask.sum())
-    lof_count = int(lof_mask.sum())
-    svm_count = int(svm_mask.sum())
-    con_count = int(consensus_mask.sum())
 
-    def _pct(count: int) -> float:
-        return round(float(count / n_rows * 100), 2) if n_rows else 0.0
+    iso_mask = (
+        iso_labels == -1
+    )
+
+    lof_mask = (
+        lof_labels == -1
+    )
+
+    svm_mask = (
+        svm_labels == -1
+    )
+
+    # -----------------------------------------------------------------------
+    # Vote Count
+    # -----------------------------------------------------------------------
+
+    vote_counts = (
+        iso_mask.astype(np.int8)
+        + lof_mask.astype(np.int8)
+        + svm_mask.astype(np.int8)
+    )
+
+    # At least two models agree
+    consensus_mask = (
+        vote_counts >= 2
+    )
+
+    consensus_indices = (
+        df.index[consensus_mask].tolist()
+    )
+
+    # -----------------------------------------------------------------------
+    # Individual Model Counts
+    # -----------------------------------------------------------------------
+
+    iso_count = int(
+        iso_mask.sum()
+    )
+
+    lof_count = int(
+        lof_mask.sum()
+    )
+
+    svm_count = int(
+        svm_mask.sum()
+    )
+
+    consensus_count = int(
+        consensus_mask.sum()
+    )
+
+    # -----------------------------------------------------------------------
+    # Pairwise Agreement
+    # -----------------------------------------------------------------------
+
+    if_lof_mask = (
+        iso_mask & lof_mask
+    )
+
+    if_svm_mask = (
+        iso_mask & svm_mask
+    )
+
+    lof_svm_mask = (
+        lof_mask & svm_mask
+    )
+
+    pairwise_agreement = {
+
+        "isolation_forest_lof": {
+            "records": int(
+                if_lof_mask.sum()
+            ),
+            "percentage_of_dataset": _percentage(
+                int(if_lof_mask.sum()),
+                n_rows,
+            ),
+        },
+
+        "isolation_forest_svm": {
+            "records": int(
+                if_svm_mask.sum()
+            ),
+            "percentage_of_dataset": _percentage(
+                int(if_svm_mask.sum()),
+                n_rows,
+            ),
+        },
+
+        "lof_svm": {
+            "records": int(
+                lof_svm_mask.sum()
+            ),
+            "percentage_of_dataset": _percentage(
+                int(lof_svm_mask.sum()),
+                n_rows,
+            ),
+        },
+
+        "all_three_models": {
+            "records": int(
+                (
+                    iso_mask
+                    & lof_mask
+                    & svm_mask
+                ).sum()
+            ),
+            "percentage_of_dataset": _percentage(
+                int(
+                    (
+                        iso_mask
+                        & lof_mask
+                        & svm_mask
+                    ).sum()
+                ),
+                n_rows,
+            ),
+        },
+    }
+
+    # -----------------------------------------------------------------------
+    # Model Comparison
+    # -----------------------------------------------------------------------
 
     model_comparison = [
+
         {
             "model": "Isolation Forest",
             "anomalies": iso_count,
-            "anomaly_pct": _pct(iso_count),
+            "anomaly_pct": _percentage(
+                iso_count,
+                n_rows,
+            ),
             "execution_time_sec": iso_time,
             "rows_analysed": n_rows,
+            "threshold_method": "auto",
         },
+
         {
             "model": "Local Outlier Factor",
             "anomalies": lof_count,
-            "anomaly_pct": _pct(lof_count),
+            "anomaly_pct": _percentage(
+                lof_count,
+                n_rows,
+            ),
             "execution_time_sec": lof_time,
             "rows_analysed": n_rows,
+            "threshold_method": "auto",
         },
+
         {
             "model": "One-Class SVM",
             "anomalies": svm_count,
-            "anomaly_pct": _pct(svm_count),
+            "anomaly_pct": _percentage(
+                svm_count,
+                n_rows,
+            ),
             "execution_time_sec": svm_time,
             "rows_analysed": n_rows,
+            "threshold_method": f"nu={SVM_NU}",
         },
     ]
 
-    logger.info(
-        "Consensus (>= 2/3 models): %d anomaly/anomalies (%.2f%%).",
-        con_count,
-        _pct(con_count),
+    # -----------------------------------------------------------------------
+    # Collect Records Flagged by At Least One Model
+    # -----------------------------------------------------------------------
+
+    any_flag_mask = (
+        vote_counts >= 1
     )
 
+    all_flag_indices = (
+        df.index[any_flag_mask].tolist()
+    )
+
+    # Put consensus records first
+    consensus_set = set(
+        consensus_indices
+    )
+
+    sorted_indices = (
+        list(consensus_indices)
+        + [
+            index
+            for index in all_flag_indices
+            if index not in consensus_set
+        ]
+    )
+
+    # Maximum 200 records for frontend
+    sorted_indices = sorted_indices[:200]
+
+    # -----------------------------------------------------------------------
+    # Index Mapping
+    # -----------------------------------------------------------------------
+
+    index_to_position = {
+        index: position
+        for position, index
+        in enumerate(df.index)
+    }
+
+    model_names = [
+        "Isolation Forest",
+        "Local Outlier Factor",
+        "One-Class SVM",
+    ]
+
+    model_masks = [
+        iso_mask,
+        lof_mask,
+        svm_mask,
+    ]
+
+    model_scores = [
+        iso_scores,
+        lof_scores,
+        svm_scores,
+    ]
+
+    # -----------------------------------------------------------------------
+    # Build Anomaly Records
+    # -----------------------------------------------------------------------
+
+    anomaly_records: List[dict] = []
+
+    for index in sorted_indices:
+
+        position = index_to_position[index]
+
+        flagging_models = [
+            name
+            for name, mask
+            in zip(
+                model_names,
+                model_masks,
+            )
+            if mask[position]
+        ]
+
+        row_dict: Dict[str, Any] = {}
+
+        for key, value in (
+            df.loc[index].to_dict().items()
+        ):
+
+            if hasattr(
+                value,
+                "isoformat",
+            ):
+                row_dict[key] = (
+                    value.isoformat()
+                )
+
+            elif isinstance(
+                value,
+                np.generic,
+            ):
+                row_dict[key] = (
+                    value.item()
+                )
+
+            else:
+                row_dict[key] = value
+
+        # Model information
+        row_dict["anomaly_index"] = int(
+            index
+        )
+
+        row_dict["model_vote_count"] = int(
+            vote_counts[position]
+        )
+
+        row_dict["models_flagged"] = (
+            flagging_models
+        )
+
+        # Individual model scores
+        row_dict[
+            "isolation_forest_score"
+        ] = _safe_float(
+            iso_scores[position]
+        )
+
+        row_dict[
+            "lof_score"
+        ] = _safe_float(
+            lof_scores[position]
+        )
+
+        row_dict[
+            "one_class_svm_score"
+        ] = _safe_float(
+            svm_scores[position]
+        )
+
+        anomaly_records.append(
+            row_dict
+        )
+
+    # -----------------------------------------------------------------------
+    # Vote Distribution
+    # -----------------------------------------------------------------------
+
+    vote_distribution = {
+
+        "one_model": int(
+            (vote_counts == 1).sum()
+        ),
+
+        "two_models": int(
+            (vote_counts == 2).sum()
+        ),
+
+        "three_models": int(
+            (vote_counts == 3).sum()
+        ),
+    }
+
+    # -----------------------------------------------------------------------
+    # Logging
+    # -----------------------------------------------------------------------
+
+    logger.info(
+        "Isolation Forest: %d anomalies (%.2f%%).",
+        iso_count,
+        _percentage(
+            iso_count,
+            n_rows,
+        ),
+    )
+
+    logger.info(
+        "LOF: %d anomalies (%.2f%%).",
+        lof_count,
+        _percentage(
+            lof_count,
+            n_rows,
+        ),
+    )
+
+    logger.info(
+        "One-Class SVM: %d anomalies (%.2f%%).",
+        svm_count,
+        _percentage(
+            svm_count,
+            n_rows,
+        ),
+    )
+
+    logger.info(
+        "Consensus >= 2/3: %d anomalies (%.2f%%).",
+        consensus_count,
+        _percentage(
+            consensus_count,
+            n_rows,
+        ),
+    )
+
+    # -----------------------------------------------------------------------
+    # Final Result
+    # -----------------------------------------------------------------------
+
     return {
+
+        # Basic information
         "features_used": feature_cols_used,
         "total_rows_analysed": n_rows,
+
+        # Keep this field for compatibility
+        # It now describes the SVM nu / previous configuration.
         "contamination_rate": contamination,
+
+        # Individual model results
         "isolation_forest_anomalies": iso_count,
-        "isolation_forest_pct": _pct(iso_count),
+        "isolation_forest_pct": _percentage(
+            iso_count,
+            n_rows,
+        ),
+
         "lof_anomalies": lof_count,
-        "lof_pct": _pct(lof_count),
+        "lof_pct": _percentage(
+            lof_count,
+            n_rows,
+        ),
+
         "one_class_svm_anomalies": svm_count,
-        "one_class_svm_pct": _pct(svm_count),
+        "one_class_svm_pct": _percentage(
+            svm_count,
+            n_rows,
+        ),
+
+        # Comparison
         "model_comparison": model_comparison,
-        "consensus_anomalies": con_count,
-        "consensus_pct": _pct(con_count),
+
+        # Agreement
+        "pairwise_agreement": pairwise_agreement,
+
+        "vote_distribution": vote_distribution,
+
+        # Consensus
+        "consensus_anomalies": consensus_count,
+
+        "consensus_pct": _percentage(
+            consensus_count,
+            n_rows,
+        ),
+
         "consensus_indices": consensus_indices,
+
+        # Records
         "anomaly_records": anomaly_records,
     }
